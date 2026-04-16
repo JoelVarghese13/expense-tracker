@@ -2,7 +2,7 @@ services:
   - type: web
     name: expense-tracker
     runtime: node
-    buildCommand: npm install && npm run build && cd server && npm install
+    buildCommand: npm install && npx vite build && cd server && npm install
     startCommand: cd server && npm start
     envVars:
       - key: MONGODB_URI
