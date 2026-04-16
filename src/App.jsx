@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import "./App.css";
 
+const API_URL = "/api/transactions";
+
 export default function App() {
   const [transactions, setTransactions] = useState([]);
   const [description, setDescription] = useState("");
@@ -8,15 +10,29 @@ export default function App() {
   const [type, setType] = useState("Income");
   const [filter, setFilter] = useState("All");
   const [editId, setEditId] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
+  // Fetch transactions from MongoDB
   useEffect(() => {
-    const saved = localStorage.getItem("transactions");
-    if (saved) setTransactions(JSON.parse(saved));
+    fetchTransactions();
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem("transactions", JSON.stringify(transactions));
-  }, [transactions]);
+  const fetchTransactions = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(API_URL);
+      if (!response.ok) throw new Error("Failed to fetch transactions");
+      const data = await response.json();
+      setTransactions(data);
+      setError("");
+    } catch (err) {
+      setError("Error loading transactions: " + err.message);
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const resetForm = () => {
     setDescription("");
@@ -25,39 +41,65 @@ export default function App() {
     setEditId(null);
   };
 
-  const addOrUpdateTransaction = () => {
-    if (!description || !amount || Number(amount) <= 0) return;
+  const addOrUpdateTransaction = async () => {
+    if (!description || !amount || Number(amount) <= 0) {
+      setError("Please fill in all fields with valid values");
+      return;
+    }
 
-    if (editId) {
-      setTransactions(
-        transactions.map((t) =>
-          t.id === editId
-            ? { ...t, description, amount: Number(amount), type }
-            : t
-        )
-      );
-    } else {
-      const newTransaction = {
-        id: Date.now(),
+    try {
+      const payload = {
         description,
         amount: Number(amount),
         type,
       };
-      setTransactions([...transactions, newTransaction]);
-    }
 
-    resetForm();
+      if (editId) {
+        // Update existing transaction
+        const response = await fetch(`${API_URL}/${editId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) throw new Error("Failed to update transaction");
+      } else {
+        // Create new transaction
+        const response = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) throw new Error("Failed to add transaction");
+      }
+
+      await fetchTransactions();
+      resetForm();
+      setError("");
+    } catch (err) {
+      setError("Error: " + err.message);
+      console.error(err);
+    }
   };
 
-  const deleteTransaction = (id) => {
-    setTransactions(transactions.filter((t) => t.id !== id));
+  const deleteTransaction = async (id) => {
+    try {
+      const response = await fetch(`${API_URL}/${id}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) throw new Error("Failed to delete transaction");
+      await fetchTransactions();
+      setError("");
+    } catch (err) {
+      setError("Error: " + err.message);
+      console.error(err);
+    }
   };
 
   const editTransaction = (transaction) => {
     setDescription(transaction.description);
     setAmount(transaction.amount);
     setType(transaction.type);
-    setEditId(transaction.id);
+    setEditId(transaction._id);
   };
 
   const totalIncome = useMemo(
@@ -86,6 +128,9 @@ export default function App() {
   return (
     <div className="container">
       <h1>Expense Tracker</h1>
+
+      {error && <div className="error-message">{error}</div>}
+      {loading && <p>Loading transactions...</p>}
 
       <div className="summary">
         <div className="card">
@@ -141,7 +186,7 @@ export default function App() {
         )}
 
         {filteredTransactions.map((t) => (
-          <div key={t.id} className="transaction">
+          <div key={t._id} className="transaction">
             <div>
               <strong>{t.description}</strong>
               <p className={t.type === "Income" ? "green" : "red"}>
@@ -150,7 +195,7 @@ export default function App() {
             </div>
             <div>
               <button onClick={() => editTransaction(t)}>Edit</button>
-              <button onClick={() => deleteTransaction(t.id)}>Delete</button>
+              <button onClick={() => deleteTransaction(t._id)}>Delete</button>
             </div>
           </div>
         ))}
